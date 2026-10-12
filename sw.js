@@ -1,6 +1,6 @@
 // Offline support. Cache-first: page always opens from cache, even with no network.
 // Cache refreshes in the background when online; new version takes effect on next load.
-var CACHE = 'exam-clock-v2';
+var CACHE = 'exam-clock-v3';
 var PAGE = './index.html';
 
 self.addEventListener('install', function (e) {

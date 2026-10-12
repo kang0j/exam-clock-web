@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#000000">
-<title>시험 시계</title>
+<title>BLACK CLOCK</title>
 <style>
   :root { --fg: #fff; --face: transparent; --z: 1; --x: 50%; --y: 50%; }
   html, body {
@@ -240,7 +240,7 @@
       var s = d.getSeconds(), m = d.getMinutes() + s / 60, h = (d.getHours() % 12) + m / 60;
       parts.h.setAttribute('transform', 'rotate(' + (h * 30).toFixed(2) + ')');
       parts.m.setAttribute('transform', 'rotate(' + (m * 6).toFixed(2) + ')');
-      parts.s.setAttribute('transform', 'rotate(' + s * 6 + ')');
+      sweep(d);
     } else {
       parts.hm.textContent = pad(d.getHours()) + ':' + pad(d.getMinutes());
       parts.sec.textContent = settings.seconds ? pad(d.getSeconds()) : '';
@@ -269,7 +269,18 @@
 
   // Paint heartbeat: proves the browser is actually drawing frames.
   var lastFrame = Date.now();
-  function frame() { lastFrame = Date.now(); requestAnimationFrame(frame); }
+  function frame() {
+    lastFrame = Date.now();
+    if (settings.type === 'analog' && settings.seconds) { try { sweep(new Date()); } catch (e) {} }
+    requestAnimationFrame(frame);
+  }
+
+  // Analog second hand sweeps smoothly instead of jumping once per second.
+  function sweep(d) {
+    if (!parts.s) return;
+    var s = d.getSeconds() + d.getMilliseconds() / 1000;
+    parts.s.setAttribute('transform', 'rotate(' + (s * 6).toFixed(2) + ')');
+  }
   requestAnimationFrame(frame);
 
   // ================= health watchdog =================
@@ -424,9 +435,17 @@
       body.classList.add('idle'); panel.classList.remove('open');
     }, panel.classList.contains('open') ? 8000 : 3000);
   }
-  ['mousemove', 'mousedown', 'touchstart', 'keydown', 'input'].forEach(function (ev) {
+  ['mousedown', 'touchstart', 'keydown', 'input'].forEach(function (ev) {
     window.addEventListener(ev, wake, { passive: true });
   });
+  // Browsers fire mousemove when content under a still cursor changes (the clock updates every second).
+  // Only real pointer movement counts.
+  var lastX = -1, lastY = -1;
+  window.addEventListener('mousemove', function (e) {
+    if (e.screenX === lastX && e.screenY === lastY) return;
+    lastX = e.screenX; lastY = e.screenY;
+    wake();
+  }, { passive: true });
 
   // ================= keep screen on =================
   var wakeLock = null;
