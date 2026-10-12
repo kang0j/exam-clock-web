@@ -240,7 +240,7 @@
       var s = d.getSeconds(), m = d.getMinutes() + s / 60, h = (d.getHours() % 12) + m / 60;
       parts.h.setAttribute('transform', 'rotate(' + (h * 30).toFixed(2) + ')');
       parts.m.setAttribute('transform', 'rotate(' + (m * 6).toFixed(2) + ')');
-      sweep(d);
+      parts.s.setAttribute('transform', 'rotate(' + s * 6 + ')');
     } else {
       parts.hm.textContent = pad(d.getHours()) + ':' + pad(d.getMinutes());
       parts.sec.textContent = settings.seconds ? pad(d.getSeconds()) : '';
@@ -269,18 +269,7 @@
 
   // Paint heartbeat: proves the browser is actually drawing frames.
   var lastFrame = Date.now();
-  function frame() {
-    lastFrame = Date.now();
-    if (settings.type === 'analog' && settings.seconds) { try { sweep(new Date()); } catch (e) {} }
-    requestAnimationFrame(frame);
-  }
-
-  // Analog second hand sweeps smoothly instead of jumping once per second.
-  function sweep(d) {
-    if (!parts.s) return;
-    var s = d.getSeconds() + d.getMilliseconds() / 1000;
-    parts.s.setAttribute('transform', 'rotate(' + (s * 6).toFixed(2) + ')');
-  }
+  function frame() { lastFrame = Date.now(); requestAnimationFrame(frame); }
   requestAnimationFrame(frame);
 
   // ================= health watchdog =================
