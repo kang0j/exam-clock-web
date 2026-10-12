@@ -1,0 +1,481 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#000000">
+<title>시험 시계</title>
+<style>
+  :root { --fg: #fff; --face: transparent; --z: 1; --x: 50%; --y: 50%; }
+  html, body {
+    margin: 0; height: 100%; background: #000; overflow: hidden;
+    -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent;
+  }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif; color: #fff; }
+  body.clock-black { --fg: #000; --face: #fff; }
+  #stage { position: fixed; inset: 0; background: #000; }
+
+  /* Clock is placed by its center at (--x, --y) and scaled by --z. */
+  .clock {
+    position: absolute; left: var(--x); top: var(--y); transform: translate(-50%, -50%);
+    color: var(--fg); font-weight: 600; line-height: 1; white-space: nowrap;
+    font-variant-numeric: tabular-nums; font-feature-settings: "tnum"; letter-spacing: -0.02em;
+  }
+
+  /* Digital: hours:minutes main, seconds as smaller sub-text. */
+  .clock.digital { display: flex; align-items: baseline; font-size: calc(var(--z) * min(28vw, 60vh)); }
+  body.with-sec .clock.digital { font-size: calc(var(--z) * min(21vw, 50vh)); }
+  .clock .sec { font-size: .4em; margin-left: .15em; opacity: .85; }
+  /* Black clock: white box only around the clock, rest of screen stays black (projector). */
+  body.clock-black .clock.digital { background: #fff; padding: 0.06em 0.18em; border-radius: 0.08em; }
+
+  /* Analog */
+  .clock.analog { width: calc(var(--z) * min(90vh, 90vw)); height: calc(var(--z) * min(90vh, 90vw)); }
+  .clock.analog svg { display: block; width: 100%; height: 100%; }
+  .clock.analog .face { fill: var(--face); stroke: currentColor; stroke-width: 1.5; }
+  .clock.analog .ink { fill: currentColor; }
+  .clock.analog .num { fill: currentColor; font-size: 17px; font-weight: 400; text-anchor: middle; dominant-baseline: central; }
+  .clock.analog .h-sec line { stroke: currentColor; stroke-width: 1.2; }
+  body:not(.with-sec) .clock.analog .h-sec { display: none; }
+
+  .ui { transition: opacity .4s; }
+  body.idle .ui { opacity: 0; pointer-events: none; }
+  body.idle { cursor: none; }
+  #controls { position: fixed; right: 16px; bottom: 16px; display: flex; gap: 8px; }
+  #controls button {
+    background: transparent; color: rgba(255,255,255,.55); border: 1px solid rgba(255,255,255,.35);
+    border-radius: 8px; padding: 8px 14px; font-size: 15px; cursor: pointer;
+  }
+  #panel {
+    position: fixed; right: 16px; bottom: 64px; background: #111; border: 1px solid #333;
+    border-radius: 12px; padding: 16px 18px; width: 280px; max-width: calc(100vw - 32px); box-sizing: border-box;
+    display: none; font-size: 16px;
+  }
+  #panel.open { display: block; }
+  #panel h2 { margin: 0 0 12px; font-size: 15px; font-weight: 600; opacity: .7; }
+  .row { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 7px 0; }
+  .seg { display: flex; border: 1px solid #333; border-radius: 8px; overflow: hidden; }
+  .seg button { background: transparent; color: #fff; border: 0; padding: 6px 12px; font-size: 14px; cursor: pointer; }
+  .seg button[aria-pressed="true"] { background: #fff; color: #000; }
+  .row input[type=range] { flex: 1; min-width: 0; accent-color: #fff; }
+  .row .val { width: 3.2em; text-align: right; font-size: 14px; opacity: .7; font-variant-numeric: tabular-nums; }
+  .row .lbl { width: 3.2em; }
+  #resetPos { width: 100%; margin-top: 6px; background: transparent; color: #fff; border: 1px solid #333; border-radius: 8px; padding: 7px; font-size: 14px; cursor: pointer; }
+  #status { margin-top: 10px; font-size: 13px; opacity: .6; }
+</style>
+</head>
+<body class="with-sec">
+<div id="stage"><div id="clock" class="clock digital"></div></div>
+
+<div id="panel" class="ui" role="dialog" aria-label="설정">
+  <h2>설정</h2>
+  <div class="row">
+    <span>시계 종류</span>
+    <div class="seg" id="typeSeg">
+      <button data-v="digital">디지털</button>
+      <button data-v="analog">아날로그</button>
+    </div>
+  </div>
+  <div class="row">
+    <span>시계 색상</span>
+    <div class="seg" id="colorSeg">
+      <button data-v="white">흰색</button>
+      <button data-v="black">검정</button>
+    </div>
+  </div>
+  <div class="row">
+    <span>초 표시</span>
+    <div class="seg" id="secSeg">
+      <button data-v="on">ON</button>
+      <button data-v="off">OFF</button>
+    </div>
+  </div>
+  <div class="row"><span class="lbl">크기</span><input type="range" id="zIn" min="10" max="100" step="1"><span class="val" id="zVal"></span></div>
+  <div class="row"><span class="lbl">가로 X</span><input type="range" id="xIn" min="0" max="100" step="1"><span class="val" id="xVal"></span></div>
+  <div class="row"><span class="lbl">세로 Y</span><input type="range" id="yIn" min="0" max="100" step="1"><span class="val" id="yVal"></span></div>
+  <button id="resetPos" type="button">크기·위치 초기화</button>
+  <div id="status">오프라인 준비 확인 중…</div>
+</div>
+
+<div id="controls" class="ui">
+  <button id="fsBtn" type="button">전체화면</button>
+  <button id="setBtn" type="button">설정</button>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  // ================= settings =================
+  // Stored in 3 places (URL hash, localStorage, sessionStorage) so a reload restores
+  // them even if one storage is blocked or cleared.
+  var KEY = 'exam-clock-settings-v1';
+  var DEFAULTS = { type: 'digital', color: 'white', seconds: true, size: 100, x: 50, y: 50 };
+
+  function num(v, lo, hi, def) {
+    v = Number(v);
+    if (!isFinite(v)) return def;
+    return Math.min(hi, Math.max(lo, Math.round(v)));
+  }
+  // Accepts any partial/garbage object, returns a fully valid settings object.
+  function normalize(o) {
+    o = o || {};
+    return {
+      type: o.type === 'analog' ? 'analog' : 'digital',
+      color: o.color === 'black' ? 'black' : 'white',
+      seconds: typeof o.seconds === 'boolean' ? o.seconds : true,
+      size: num(o.size, 10, 100, DEFAULTS.size),
+      x: num(o.x, 0, 100, DEFAULTS.x),
+      y: num(o.y, 0, 100, DEFAULTS.y)
+    };
+  }
+  function fromHash() {
+    var h = location.hash.replace(/^#/, '');
+    if (!/(^|&)c=/.test(h)) return null;
+    var o = {};
+    h.split('&').forEach(function (kv) {
+      var p = kv.split('='), k = p[0], v = decodeURIComponent(p[1] || '');
+      if (k === 't') o.type = v === 'a' ? 'analog' : 'digital';
+      else if (k === 'c') o.color = v;
+      else if (k === 's') o.seconds = v === '1';
+      else if (k === 'z') o.size = v;
+      else if (k === 'x') o.x = v;
+      else if (k === 'y') o.y = v;
+    });
+    return o;
+  }
+  function fromStore(store) {
+    try {
+      var o = JSON.parse(window[store].getItem(KEY) || 'null');
+      if (o && typeof o === 'object') return o;
+    } catch (e) {}
+    return null;
+  }
+  var loaded = fromHash() || fromStore('localStorage') || fromStore('sessionStorage');
+  var settings = normalize(loaded || DEFAULTS);
+
+  function save() {
+    var json = JSON.stringify(settings);
+    try { localStorage.setItem(KEY, json); } catch (e) {}
+    try { sessionStorage.setItem(KEY, json); } catch (e) {}
+    try {
+      history.replaceState(null, '', '#t=' + (settings.type === 'analog' ? 'a' : 'd') +
+        '&c=' + settings.color + '&s=' + (settings.seconds ? 1 : 0) +
+        '&z=' + settings.size + '&x=' + settings.x + '&y=' + settings.y);
+    } catch (e) {}
+  }
+
+  // ================= clock =================
+  var body = document.body;
+  var clockEl = document.getElementById('clock');
+  var parts = {}; // references to the elements render() updates
+  var SVGNS = 'http://www.w3.org/2000/svg';
+
+  function pad(n) { return n < 10 ? '0' + n : '' + n; }
+  function stamp(d) {
+    return pad(d.getHours()) + ':' + pad(d.getMinutes()) + (settings.seconds ? pad(d.getSeconds()) : '');
+  }
+
+  function svg(tag, attrs, parent) {
+    var el = document.createElementNS(SVGNS, tag);
+    for (var k in attrs) el.setAttribute(k, attrs[k]);
+    if (parent) parent.appendChild(el);
+    return el;
+  }
+
+  function buildDigital(el) {
+    parts.hm = document.createElement('span');
+    parts.sec = document.createElement('span');
+    parts.sec.className = 'sec';
+    el.appendChild(parts.hm);
+    el.appendChild(parts.sec);
+  }
+
+  function buildAnalog(el) {
+    // Minimal numeral dial: thin ring, fine ticks, 1-12, slim rounded hands.
+    var root = svg('svg', { viewBox: '-100 -100 200 200', 'aria-hidden': 'true' }, el);
+    svg('circle', { 'class': 'face', cx: 0, cy: 0, r: 97 }, root);
+    for (var i = 0; i < 60; i++) {
+      svg('rect', {
+        'class': 'ink', x: -0.6, y: -94, width: 1.2, height: i % 5 ? 4 : 7, transform: 'rotate(' + i * 6 + ')'
+      }, root);
+    }
+    for (var h = 1; h <= 12; h++) {
+      var a = h * Math.PI / 6;
+      var t = svg('text', { 'class': 'num', x: (Math.sin(a) * 74).toFixed(2), y: (-Math.cos(a) * 74).toFixed(2) }, root);
+      t.textContent = h;
+    }
+    // Hands point to 12 and are rotated as groups. Capsule: length to tip, tail behind center, width.
+    function capsule(len, tail, w) {
+      var g = svg('g', {}, root);
+      svg('rect', { 'class': 'ink', x: -w / 2, y: -len, width: w, height: len + tail, rx: w / 2 }, g);
+      return g;
+    }
+    parts.h = capsule(50, 8, 5.5);
+    parts.m = capsule(80, 10, 3.8);
+    parts.s = svg('g', { 'class': 'h-sec' }, root);
+    svg('line', { x1: 0, y1: 16, x2: 0, y2: -88 }, parts.s);
+    svg('circle', { 'class': 'ink', cx: 0, cy: 0, r: 3.4 }, root);
+  }
+
+  // (Re)creates the clock element from scratch for the current type. Also used for recovery.
+  function buildClock() {
+    var el = document.createElement('div');
+    el.id = 'clock';
+    el.className = 'clock ' + settings.type;
+    parts = {};
+    if (settings.type === 'analog') buildAnalog(el); else buildDigital(el);
+    var old = document.getElementById('clock');
+    var stage = document.getElementById('stage') || body;
+    if (old && old.parentNode) old.parentNode.replaceChild(el, old); else stage.appendChild(el);
+    clockEl = el;
+    render();
+  }
+
+  function render() {
+    var d = new Date();
+    var st = stamp(d);
+    if (clockEl.getAttribute('data-t') === st) return;
+    if (settings.type === 'analog') {
+      var s = d.getSeconds(), m = d.getMinutes() + s / 60, h = (d.getHours() % 12) + m / 60;
+      parts.h.setAttribute('transform', 'rotate(' + (h * 30).toFixed(2) + ')');
+      parts.m.setAttribute('transform', 'rotate(' + (m * 6).toFixed(2) + ')');
+      parts.s.setAttribute('transform', 'rotate(' + s * 6 + ')');
+    } else {
+      parts.hm.textContent = pad(d.getHours()) + ':' + pad(d.getMinutes());
+      parts.sec.textContent = settings.seconds ? pad(d.getSeconds()) : '';
+    }
+    clockEl.setAttribute('data-t', st);
+  }
+
+  // Does the screen actually show the current time?
+  function displayOk() {
+    if (!document.body.contains(clockEl)) return false;
+    var st = stamp(new Date());
+    if (clockEl.getAttribute('data-t') !== st) return false;
+    if (settings.type === 'digital') return clockEl.textContent === st;
+    return !!(parts.h && clockEl.contains(parts.h));
+  }
+
+  // Primary tick, aligned to the next second boundary. Time always read fresh from system clock.
+  var timer = null, lastTick = 0;
+  function tick() {
+    lastTick = Date.now();
+    try { render(); } catch (e) {}
+    clearTimeout(timer);
+    timer = setTimeout(tick, 1000 - (Date.now() % 1000) + 5);
+    if (Date.now() - lastWatch > 3000) startWatchdog(); // tick and watchdog guard each other
+  }
+
+  // Paint heartbeat: proves the browser is actually drawing frames.
+  var lastFrame = Date.now();
+  function frame() { lastFrame = Date.now(); requestAnimationFrame(frame); }
+  requestAnimationFrame(frame);
+
+  // ================= health watchdog =================
+  // Tier 1: restart timers. Tier 2: rebuild clock element. Tier 3: reload page (only if offline-safe).
+  var watchId = null, lastWatch = Date.now(), stale = 0, faults = 0, lastFaultAt = 0;
+
+  function startWatchdog() {
+    clearInterval(watchId);
+    lastWatch = Date.now();
+    watchId = setInterval(watch, 500);
+  }
+
+  function watch() {
+    var now = Date.now();
+    var gap = now - lastWatch;
+    lastWatch = now;
+    // Big gap = device slept or tab was frozen by OS. Not a fault: resync and reset baselines.
+    if (gap > 5000) { lastFrame = now; stale = 0; tick(); return; }
+    if (document.visibilityState !== 'visible') return;
+
+    try {
+      if (now - lastTick > 2500) tick();
+      render();
+      stale = displayOk() ? 0 : stale + 1;
+    } catch (e) { stale++; }
+
+    if (stale >= 6) return fault('display-stale');           // ~3s showing wrong time
+    if (now - lastFrame > 10000) return fault('no-paint');   // visible but no frames for 10s
+  }
+
+  function fault(reason) {
+    var now = Date.now();
+    faults = (now - lastFaultAt < 60000) ? faults + 1 : 1;
+    lastFaultAt = now;
+    stale = 0; lastFrame = now;
+    if (faults === 1) { softRecover(); return; }
+    safeReload(reason);
+  }
+
+  function softRecover() {
+    try { buildClock(); } catch (e) {}
+    tick();
+  }
+
+  // ================= safe reload =================
+  // Reload only when the page will come back without network, and never loop.
+  var RKEY = 'exam-clock-reloads';
+  function recentReloads() {
+    var list = [];
+    try { list = JSON.parse(localStorage.getItem(RKEY) || '[]'); } catch (e) {}
+    var cutoff = Date.now() - 10 * 60000;
+    return list.filter(function (t) { return typeof t === 'number' && t > cutoff; });
+  }
+  function offlineSafe(cb) {
+    if (location.protocol === 'file:') return cb(true);
+    try {
+      if (!navigator.serviceWorker || !navigator.serviceWorker.controller || !window.caches) return cb(false);
+      caches.match(location.pathname, { ignoreSearch: true }).then(function (r) { cb(!!r); }, function () { cb(false); });
+    } catch (e) { cb(false); }
+  }
+  var reloading = false;
+  function safeReload(reason) {
+    if (reloading) return;
+    var list = recentReloads();
+    if (list.length >= 3) { softRecover(); return; } // loop guard: keep self-healing in place
+    reloading = true;
+    offlineSafe(function (ok) {
+      if (!ok) { reloading = false; softRecover(); return; }
+      list.push(Date.now());
+      try { localStorage.setItem(RKEY, JSON.stringify(list)); } catch (e) {}
+      save(); // make sure settings survive the reload
+      location.reload();
+    });
+  }
+
+  // ================= settings UI =================
+  function $(id) { return document.getElementById(id); }
+  function mark(id, v) {
+    var btns = $(id).getElementsByTagName('button');
+    for (var i = 0; i < btns.length; i++) {
+      btns[i].setAttribute('aria-pressed', btns[i].getAttribute('data-v') === v ? 'true' : 'false');
+    }
+  }
+  function applySettings() {
+    var rs = document.documentElement.style;
+    rs.setProperty('--z', settings.size / 100);
+    rs.setProperty('--x', settings.x + '%');
+    rs.setProperty('--y', settings.y + '%');
+    body.classList.toggle('clock-black', settings.color === 'black');
+    body.classList.toggle('with-sec', settings.seconds);
+    mark('typeSeg', settings.type);
+    mark('colorSeg', settings.color);
+    mark('secSeg', settings.seconds ? 'on' : 'off');
+    $('zIn').value = settings.size; $('zVal').textContent = settings.size + '%';
+    $('xIn').value = settings.x; $('xVal').textContent = settings.x + '%';
+    $('yIn').value = settings.y; $('yVal').textContent = settings.y + '%';
+    if (clockEl.className.indexOf(settings.type) < 0 || !parts.hm && !parts.h) buildClock();
+    else { clockEl.removeAttribute('data-t'); render(); }
+  }
+  function update(key, value) {
+    var next = {};
+    for (var k in settings) next[k] = settings[k];
+    next[key] = value;
+    settings = normalize(next);
+    save();
+    applySettings();
+  }
+
+  function onSeg(id, fn) {
+    $(id).addEventListener('click', function (e) {
+      var v = e.target.getAttribute('data-v');
+      if (v) fn(v);
+    });
+  }
+  onSeg('typeSeg', function (v) { update('type', v); });
+  onSeg('colorSeg', function (v) { update('color', v); });
+  onSeg('secSeg', function (v) { update('seconds', v === 'on'); });
+  [['zIn', 'size'], ['xIn', 'x'], ['yIn', 'y']].forEach(function (p) {
+    $(p[0]).addEventListener('input', function (e) { update(p[1], e.target.value); });
+  });
+  $('resetPos').addEventListener('click', function () {
+    settings.size = DEFAULTS.size; settings.x = DEFAULTS.x; settings.y = DEFAULTS.y;
+    save(); applySettings();
+  });
+
+  var panel = $('panel');
+  $('setBtn').addEventListener('click', function () { panel.classList.toggle('open'); });
+
+  // ================= fullscreen =================
+  $('fsBtn').addEventListener('click', function () {
+    try {
+      var de = document.documentElement;
+      if (document.fullscreenElement || document.webkitFullscreenElement) {
+        (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+      } else {
+        var r = (de.requestFullscreen || de.webkitRequestFullscreen).call(de);
+        if (r && r.catch) r.catch(function () {});
+      }
+    } catch (e) {}
+  });
+
+  // ================= idle UI hide =================
+  // Panel stays open while the pointer is over it (e.g. dragging a slider).
+  var idleTimer = null, overPanel = false;
+  panel.addEventListener('mouseenter', function () { overPanel = true; });
+  panel.addEventListener('mouseleave', function () { overPanel = false; });
+  function wake() {
+    body.classList.remove('idle');
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(function () {
+      if (overPanel) return wake();
+      body.classList.add('idle'); panel.classList.remove('open');
+    }, panel.classList.contains('open') ? 8000 : 3000);
+  }
+  ['mousemove', 'mousedown', 'touchstart', 'keydown', 'input'].forEach(function (ev) {
+    window.addEventListener(ev, wake, { passive: true });
+  });
+
+  // ================= keep screen on =================
+  var wakeLock = null;
+  function requestWakeLock() {
+    try {
+      if (!('wakeLock' in navigator) || document.visibilityState !== 'visible') return;
+      if (wakeLock && !wakeLock.released) return;
+      navigator.wakeLock.request('screen').then(function (l) {
+        wakeLock = l;
+        l.addEventListener('release', function () { wakeLock = null; });
+      }).catch(function () {});
+    } catch (e) {}
+  }
+  setInterval(requestWakeLock, 10000);
+
+  function resync() { lastFrame = Date.now(); stale = 0; tick(); requestWakeLock(); }
+  document.addEventListener('visibilitychange', resync);
+  window.addEventListener('focus', resync);
+  window.addEventListener('pageshow', resync);
+  window.addEventListener('click', requestWakeLock);
+
+  // Errors must never show dialogs or stop the clock.
+  window.addEventListener('error', function (e) { try { e.preventDefault(); } catch (_) {} });
+  window.addEventListener('unhandledrejection', function (e) { try { e.preventDefault(); } catch (_) {} });
+
+  // ================= offline cache =================
+  var statusEl = $('status');
+  function showStatus() {
+    offlineSafe(function (ok) {
+      statusEl.textContent = ok ? '오프라인 준비됨 (인터넷 없이 새로고침 가능)' : '오프라인 준비 안 됨: 인터넷 연결 상태로 한 번 새로고침하세요';
+    });
+  }
+  try {
+    if ('serviceWorker' in navigator && location.protocol.indexOf('http') === 0) {
+      navigator.serviceWorker.register('sw.js').catch(function () {});
+      navigator.serviceWorker.addEventListener('controllerchange', showStatus);
+    }
+  } catch (e) {}
+  showStatus();
+  setInterval(showStatus, 5000);
+
+  // ================= start =================
+  save(); // sync all three stores
+  applySettings();
+  startWatchdog();
+  tick();
+  wake();
+  requestWakeLock();
+})();
+</script>
+</body>
+</html>
